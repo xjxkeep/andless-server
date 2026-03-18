@@ -1,33 +1,60 @@
-name: Build and Deploy
+name: Deploy
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to deploy (dev or tag like v1.0.0)'
+        required: true
+        default: 'dev'
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Install ossutil v2
+        run: |
+          curl -fsSL -o ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.2.1/ossutil-2.2.1-linux-amd64.zip"
+          unzip ossutil.zip
+          sudo mv ossutil-2.2.1-linux-amd64/ossutil /usr/local/bin/
+          ossutil version
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      - name: Determine OSS path
+        id: oss-path
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ "$VERSION" = "dev" ]; then
+            echo "oss_file=dev/latest/andless-server" >> "$GITHUB_OUTPUT"
+          else
+            echo "oss_file=release/${VERSION}/andless-server-${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Build linux binary
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o andless-server .
+      - name: Download binary from OSS
+        env:
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          BUCKET="${{ secrets.OSS_BUCKET }}"
+          ENDPOINT="${{ secrets.OSS_ENDPOINT }}"
+          REGION=$(echo "$ENDPOINT" | sed 's/^oss-//;s/\.aliyuncs\.com$//')
+          ossutil cp "oss://${BUCKET}/${{ steps.oss-path.outputs.oss_file }}" andless-server --endpoint="${ENDPOINT}" --region="${REGION}"
+          chmod +x andless-server
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy binary to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: andless-server
-          target: /opt/andless-server
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "mkdir -p /opt/andless-server"
+          scp andless-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/andless-server/andless-server
 
       - name: Install and restart service
         uses: appleboy/ssh-action@v1
@@ -36,7 +63,6 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Make binary executable
             chmod +x /opt/andless-server/andless-server
 
             # Create env file if not exists
@@ -48,7 +74,7 @@ jobs:
             OSS_BUCKET=
             SERVER_PORT=8080
             EOF
-              echo "⚠️  Created /opt/andless-server/.env — please fill in OSS credentials"
+              echo "Created /opt/andless-server/.env — please fill in OSS credentials"
             fi
 
             # Install systemd service
@@ -69,7 +95,6 @@ jobs:
             WantedBy=multi-user.target
             EOF
 
-            # Reload and restart
             systemctl daemon-reload
             systemctl enable andless-server
             systemctl restart andless-server
