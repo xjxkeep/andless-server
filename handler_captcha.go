@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -20,9 +21,9 @@ func NewCaptchaHandler(store *CaptchaStore, ossClient *OSSClient) *CaptchaHandle
 		0,   // showLineOptions
 		4,   // length
 		"abcdefghijklmnopqrstuvwxyz0123456789",
-		nil,  // bgColor
-		nil,  // fonts
-		nil,  // fontsArray
+		nil, // bgColor
+		nil, // fonts
+		nil, // fontsArray
 	)
 	captcha := base64Captcha.NewCaptcha(driver, store)
 	return &CaptchaHandler{
@@ -49,11 +50,12 @@ type VerifyResponse struct {
 }
 
 func (h *CaptchaHandler) Generate(c *gin.Context) {
-	id, b64s, _, err := h.captcha.Generate()
+	id, b64s, answer, err := h.captcha.Generate()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate captcha"})
 		return
 	}
+	log.Println("answer", answer)
 	c.JSON(http.StatusOK, GenerateResponse{
 		RequestID:    id,
 		CaptchaImage: b64s,

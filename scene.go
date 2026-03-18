@@ -2,9 +2,9 @@ package main
 
 // sceneToObject maps scene identifiers to OSS object keys.
 var sceneToObject = map[string]string{
-	"app-download":     "releases/app-latest.apk",
-	"desktop-download": "releases/desktop-latest.dmg",
-	"sdk-download":     "releases/sdk-latest.zip",
+	"linux-download":   "dev/latest/andless-console.deb",
+	"windows-download": "dev/latest/AndlessConsole-Setup.exe",
+	"macos-download":   "dev/latest/AndlessConsole.dmg",
 }
 
 // GetObjectKey returns the OSS object key for the given scene.
