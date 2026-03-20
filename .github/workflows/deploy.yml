@@ -1,101 +1,46 @@
-name: Deploy
+name: Build and Deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to deploy (dev or tag like v1.0.0)'
-        required: true
-        default: 'dev'
-        type: string
+  push:
+    branches: [main]
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: crpi-hrity7yofv004168.cn-shanghai.personal.cr.aliyuncs.com
+  IMAGE: crpi-hrity7yofv004168.cn-shanghai.personal.cr.aliyuncs.com/15150276667/andless-server
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Install ossutil v2
-        run: |
-          curl -fsSL -o ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.2.1/ossutil-2.2.1-linux-amd64.zip"
-          unzip ossutil.zip
-          sudo mv ossutil-2.2.1-linux-amd64/ossutil /usr/local/bin/
-          ossutil version
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Determine OSS path
-        id: oss-path
-        run: |
-          VERSION="${{ inputs.version }}"
-          if [ "$VERSION" = "dev" ]; then
-            echo "oss_file=dev/latest/andless-server" >> "$GITHUB_OUTPUT"
-          else
-            echo "oss_file=release/${VERSION}/andless-server-${VERSION}" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Login to Aliyun ACR
+        run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
 
-      - name: Download binary from OSS
-        env:
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          BUCKET="${{ secrets.OSS_BUCKET }}"
-          ENDPOINT="${{ secrets.OSS_ENDPOINT }}"
-          REGION=$(echo "$ENDPOINT" | sed 's/^oss-//;s/\.aliyuncs\.com$//')
-          ossutil cp "oss://${BUCKET}/${{ steps.oss-path.outputs.oss_file }}" andless-server --endpoint="${ENDPOINT}" --region="${REGION}"
-          chmod +x andless-server
+      - name: Build Docker image
+        run: docker build -t ${{ env.IMAGE }}:${{ github.sha }} .
 
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+      - name: Push Docker image
+        run: docker push ${{ env.IMAGE }}:${{ github.sha }}
 
-      - name: Deploy binary to server
-        run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "mkdir -p /opt/andless-server"
-          scp andless-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/andless-server/andless-server
-
-      - name: Install and restart service
+      - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
+          username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            chmod +x /opt/andless-server/andless-server
-
-            # Create env file if not exists
-            if [ ! -f /opt/andless-server/.env ]; then
-              cat > /opt/andless-server/.env <<'EOF'
-            OSS_ENDPOINT=
-            OSS_ACCESS_KEY_ID=
-            OSS_ACCESS_KEY_SECRET=
-            OSS_BUCKET=
-            SERVER_PORT=8080
-            EOF
-              echo "Created /opt/andless-server/.env — please fill in OSS credentials"
-            fi
-
-            # Install systemd service
-            cat > /etc/systemd/system/andless-server.service <<'EOF'
-            [Unit]
-            Description=Andless Server
-            After=network.target
-
-            [Service]
-            Type=simple
-            WorkingDirectory=/opt/andless-server
-            EnvironmentFile=/opt/andless-server/.env
-            ExecStart=/opt/andless-server/andless-server
-            Restart=on-failure
-            RestartSec=5
-
-            [Install]
-            WantedBy=multi-user.target
-            EOF
-
-            systemctl daemon-reload
-            systemctl enable andless-server
-            systemctl restart andless-server
-            systemctl status andless-server --no-pager
+            cd /root/helms || git clone https://github.com/xjxkeep/helms.git /root/helms
+            cd /root/helms
+            git fetch origin main
+            git reset --hard origin/main
+            helm upgrade --install andless-server ./andless-server/ \
+              --set image.tag=${{ github.sha }} \
+              --set imagePullSecret.username="${{ secrets.ACR_USERNAME }}" \
+              --set imagePullSecret.password="${{ secrets.ACR_PASSWORD }}" \
+              --set env.OSS_ENDPOINT="${{ secrets.OSS_ENDPOINT }}" \
+              --set env.OSS_ACCESS_KEY_ID="${{ secrets.OSS_ACCESS_KEY_ID }}" \
+              --set env.OSS_ACCESS_KEY_SECRET="${{ secrets.OSS_ACCESS_KEY_SECRET }}" \
+              --set env.OSS_BUCKET="${{ secrets.OSS_BUCKET }}" \
+              --wait --timeout 120s
