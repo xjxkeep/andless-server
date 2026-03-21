@@ -15,13 +15,18 @@ func main() {
 	}
 
 	store := NewCaptchaStore()
-	handler := NewCaptchaHandler(store, ossClient)
+	captchaHandler := NewCaptchaHandler(store, ossClient)
+	versionHandler := NewVersionHandler(ossClient)
 
 	r := gin.Default()
-	api := r.Group("/api/captcha")
+	captchaAPI := r.Group("/api/captcha")
 	{
-		api.POST("/generate", handler.Generate)
-		api.POST("/verify", handler.Verify)
+		captchaAPI.POST("/generate", captchaHandler.Generate)
+		captchaAPI.POST("/verify", captchaHandler.Verify)
+	}
+	versionAPI := r.Group("/api/version")
+	{
+		versionAPI.GET("/check", versionHandler.Check)
 	}
 
 	log.Printf("Server starting on :%s", cfg.ServerPort)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 )
@@ -20,6 +21,16 @@ func NewOSSClient(cfg Config) (*OSSClient, error) {
 		return nil, fmt.Errorf("failed to get OSS bucket: %w", err)
 	}
 	return &OSSClient{bucket: bucket}, nil
+}
+
+// GetObject reads an object from OSS and returns its content.
+func (o *OSSClient) GetObject(objectKey string) ([]byte, error) {
+	body, err := o.bucket.GetObject(objectKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get OSS object %s: %w", objectKey, err)
+	}
+	defer body.Close()
+	return io.ReadAll(body)
 }
 
 // SignURL generates a pre-signed download URL valid for 5 minutes.
