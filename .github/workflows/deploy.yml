@@ -3,24 +3,32 @@ name: Build and Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to deploy (commit SHA). Leave empty to use current commit.'
+        required: false
+        default: ''
+        type: string
+      skip_build:
+        description: 'Skip build and only deploy'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   REGISTRY: crpi-hrity7yofv004168.cn-shanghai.personal.cr.aliyuncs.com
   IMAGE: crpi-hrity7yofv004168.cn-shanghai.personal.cr.aliyuncs.com/15150276667/andless-server
 
 jobs:
-  build-and-deploy:
+  build:
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.skip_build == true) }}
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Checkout helms repo
-        uses: actions/checkout@v4
-        with:
-          repository: xjxkeep/helms
-          token: ${{ secrets.GH_PAT }}
-          path: helms
 
       - name: Login to Aliyun ACR
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
@@ -31,6 +39,18 @@ jobs:
       - name: Push Docker image
         run: docker push ${{ env.IMAGE }}:${{ github.sha }}
 
+  deploy:
+    needs: build
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout helms repo
+        uses: actions/checkout@v4
+        with:
+          repository: xjxkeep/helms
+          token: ${{ secrets.GH_PAT }}
+          path: helms
+
       - name: Copy helm chart to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -39,6 +59,16 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "helms/andless-server"
           target: /root/
+
+      - name: Resolve image tag
+        id: resolve-tag
+        run: |
+          TAG="${{ inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.sha }}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image tag: ${TAG}"
 
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1
@@ -49,7 +79,7 @@ jobs:
           script: |
             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
             helm upgrade --install andless-server /root/helms/andless-server/ \
-              --set image.tag=${{ github.sha }} \
+              --set image.tag=${{ steps.resolve-tag.outputs.tag }} \
               --set imagePullSecret.username="${{ secrets.ACR_USERNAME }}" \
               --set imagePullSecret.password="${{ secrets.ACR_PASSWORD }}" \
               --set env.OSS_ENDPOINT="${{ secrets.OSS_ENDPOINT }}" \
