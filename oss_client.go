@@ -12,7 +12,12 @@ type OSSClient struct {
 }
 
 func NewOSSClient(cfg Config) (*OSSClient, error) {
-	client, err := oss.New(cfg.OSSEndpoint, cfg.OSSAccessKeyID, cfg.OSSAccessKeySecret)
+	client, err := oss.New(
+		cfg.OSSEndpoint,
+		cfg.OSSAccessKeyID,
+		cfg.OSSAccessKeySecret,
+		oss.UseCname(cfg.OSSUseCname),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create OSS client: %w", err)
 	}
