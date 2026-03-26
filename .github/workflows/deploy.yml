@@ -28,7 +28,7 @@ jobs:
       image_tag: ${{ github.sha }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Login to Aliyun ACR
         run: echo "${{ secrets.ACR_PASSWORD }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.ACR_USERNAME }}" --password-stdin
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout helms repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: xjxkeep/helms
           token: ${{ secrets.GH_PAT }}
