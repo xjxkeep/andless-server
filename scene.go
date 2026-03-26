@@ -8,6 +8,7 @@ var sceneToObject = map[string]string{
 	"windows-download-dev": "dev/latest/AndlessConsole-Setup.exe",
 	"macos-download":       "release/latest/AndlessConsole.dmg",
 	"macos-download-dev":   "dev/latest/AndlessConsole.dmg",
+	"android-download":     "release/latest/app-release.apk",
 }
 
 // GetObjectKey returns the OSS object key for the given scene.
