@@ -86,4 +86,5 @@ jobs:
               --set env.OSS_ACCESS_KEY_ID="${{ secrets.OSS_ACCESS_KEY_ID }}" \
               --set env.OSS_ACCESS_KEY_SECRET="${{ secrets.OSS_ACCESS_KEY_SECRET }}" \
               --set env.OSS_BUCKET="${{ secrets.OSS_BUCKET }}" \
+              --set-string env.OSS_USE_CNAME="${{ secrets.OSS_CNAME }}" \
               --wait --timeout 120s
