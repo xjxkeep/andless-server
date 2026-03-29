@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/mojocn/base64Captcha"
@@ -72,7 +73,7 @@ func (h *CaptchaHandler) Verify(c *gin.Context) {
 		return
 	}
 
-	if !h.captcha.Verify(req.RequestID, req.Result, true) {
+	if !h.captcha.Verify(req.RequestID, strings.ToLower(req.Result), true) {
 		c.JSON(http.StatusOK, VerifyResponse{
 			Success: false,
 			Message: "验证码错误",
