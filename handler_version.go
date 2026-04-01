@@ -30,6 +30,14 @@ func NewVersionHandler(ossClient *OSSClient) *VersionHandler {
 	}
 }
 
+// platformToScene maps platform identifiers to scene keys in sceneToObject.
+var platformToScene = map[string]string{
+	"windows":              "windows-download",
+	"macos-intel":          "macos-intel-download",
+	"macos-apple-silicon":  "macos-apple-silicon-download",
+	"linux":                "linux-download",
+}
+
 func (h *VersionHandler) Check(c *gin.Context) {
 	channel := c.DefaultQuery("channel", "release")
 	if channel != "release" && channel != "dev" {
@@ -66,4 +74,41 @@ func (h *VersionHandler) Check(c *gin.Context) {
 
 	h.cache.Set(cacheKey, &info, gocache.DefaultExpiration)
 	c.JSON(http.StatusOK, info)
+}
+
+// Download returns a pre-signed download URL for the given platform.
+// GET /api/version/download?platform=windows&channel=release
+func (h *VersionHandler) Download(c *gin.Context) {
+	platform := c.Query("platform")
+	channel := c.DefaultQuery("channel", "release")
+
+	if channel != "release" && channel != "dev" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel, must be 'release' or 'dev'"})
+		return
+	}
+
+	sceneKey, ok := platformToScene[platform]
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid platform, must be one of: windows, macos-intel, macos-apple-silicon, linux"})
+		return
+	}
+
+	if channel == "dev" {
+		sceneKey += "-dev"
+	}
+
+	objectKey := GetObjectKey(sceneKey)
+	if objectKey == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "no artifact found for this platform/channel"})
+		return
+	}
+
+	url, err := h.ossClient.SignURL(objectKey)
+	if err != nil {
+		log.Printf("failed to sign URL for %s: %v", objectKey, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate download URL"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"download_url": url})
 }

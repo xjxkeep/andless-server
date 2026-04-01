@@ -27,6 +27,7 @@ func main() {
 	versionAPI := r.Group("/api/version")
 	{
 		versionAPI.GET("/check", versionHandler.Check)
+		versionAPI.GET("/download", versionHandler.Download)
 	}
 
 	log.Printf("Server starting on :%s", cfg.ServerPort)
